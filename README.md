@@ -50,19 +50,27 @@ When opened on another computer where the username, drive name, or mount point d
 
 ---
 
-## Requirements
+## Requirements & Compatibility
 
-- **macOS** (compatible with macOS Monterey, Ventura, Sonoma, Sequoia, and later)
-- **Python 3.7+** (uses standard library modules: `plistlib`, `shutil`, `json`, `argparse`)
-- *(Optional)* **Swift** (included by default on macOS with Xcode Command Line Tools; only needed if using `--refresh-bookmarks` with `remap`).
+- **Runs with ANY Python 3 version (3.7+)**: No virtual environment (`venv`) and no package installation (`pip`) is needed. Every module used (`plistlib`, `shutil`, `json`, `argparse`, `pathlib`, `subprocess`) is built directly into Python's Standard Library. It works out of the box on any Mac.
+- **macOS**: Compatible with macOS Monterey, Ventura, Sonoma, Sequoia, and later.
+- *(Optional)* **Swift**: Included by default on macOS with Xcode Command Line Tools; only invoked if using `--refresh-bookmarks` with `remap`.
 
 ---
 
-## Quick Start
+## Installation & Quick Start
 
-Make the script executable:
+You can run the script directly without installing anything:
 ```bash
 chmod +x rapidweaver_path_manager.py
+./rapidweaver_path_manager.py --help
+```
+
+Or, if you prefer installing it as a system-wide command (`rapidweaver-path-manager`), you can install via `pipx` or `pip`:
+```bash
+pipx install .
+# or
+pip install -e .
 ```
 
 ### 1. Audit a Project

@@ -41,3 +41,5 @@ ENV/
 *.rwsw
 *.json
 !example*.json
+
+.idea/

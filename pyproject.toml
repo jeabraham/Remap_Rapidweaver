@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rapidweaver-path-manager"
+version = "1.0.0"
+description = "Inspect, repair, internalize, and remap file references in RapidWeaver project bundles (.rwc / .rw8)"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "John Abraham" }
+]
+requires-python = ">=3.7"
+keywords = ["rapidweaver", "rapidweaver-classic", "migration", "path-management", "macos"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Environment :: MacOS X",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Topic :: Utilities",
+]
+dependencies = []
+
+[project.scripts]
+rapidweaver-path-manager = "rapidweaver_path_manager:main"
+rw-path-manager = "rapidweaver_path_manager:main"

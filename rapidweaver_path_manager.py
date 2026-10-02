@@ -53,6 +53,30 @@ def get_volume_info(path: str) -> Tuple[str, str]:
             return vol_name, vol_path
     return "Macintosh HD", "/"
 
+def get_default_search_dirs(project_path: str) -> List[str]:
+    """Calculates intelligent default search directories near a RapidWeaver project."""
+    proj_dir = os.path.dirname(os.path.abspath(project_path))
+    parent_dir = os.path.dirname(proj_dir)
+    candidates = [
+        proj_dir,
+        os.path.join(proj_dir, "Pictures"),
+        os.path.join(proj_dir, "Photos"),
+        os.path.join(proj_dir, "Assets"),
+        os.path.join(proj_dir, "images"),
+        parent_dir,
+        os.path.join(parent_dir, "Pictures"),
+        os.path.join(parent_dir, "Photos"),
+        os.path.join(parent_dir, "Assets"),
+    ]
+    seen = set()
+    result = []
+    for c in candidates:
+        abs_c = os.path.abspath(c)
+        if abs_c not in seen and os.path.isdir(abs_c):
+            seen.add(abs_c)
+            result.append(abs_c)
+    return result
+
 
 class AssetResolver:
     """Indexes local asset directories for fast, flexible file lookup."""
@@ -194,8 +218,8 @@ class RapidWeaverProject:
                 "Type": "Resources"
             }
 
-    def inspect(self) -> Dict[str, Any]:
-        """Audits all file references and page-level Stacks paths."""
+    def inspect(self, resolver: Optional[AssetResolver] = None) -> Dict[str, Any]:
+        """Audits all file references and page-level Stacks paths, checking if missing files can be recovered."""
         total_refs = len(self.file_refs)
         internal_count = 0
         external_existing = 0
@@ -234,6 +258,9 @@ class RapidWeaverProject:
                     existing_list.append(info)
                 else:
                     external_missing += 1
+                    if resolver:
+                        recovered = resolver.resolve(file_name, last_path)
+                        info["recoverable_path"] = recovered
                     missing_list.append(info)
 
         # Inspect Stacks storedFiles in Pages
@@ -566,18 +593,20 @@ Examples:
     # inspect
     p_inspect = subparsers.add_parser("inspect", help="Inspect and audit project file references")
     p_inspect.add_argument("project", help="Path to .rwc / .rw8 project bundle")
+    p_inspect.add_argument("--search-dirs", nargs="+", default=None, help="Directories to search for missing asset files (defaults to smart scan of project folder and parents)")
+    p_inspect.add_argument("--no-auto-search", action="store_true", help="Disable automatic scanning of project and parent directories for missing files")
     p_inspect.add_argument("--json", action="store_true", help="Output report as JSON")
 
     # find-assets
     p_find = subparsers.add_parser("find-assets", help="Find matching local asset files for project references")
     p_find.add_argument("project", help="Path to .rwc / .rw8 project bundle")
-    p_find.add_argument("--search-dirs", nargs="+", required=True, help="Directories to search for asset files")
+    p_find.add_argument("--search-dirs", nargs="+", default=None, help="Directories to search for asset files (defaults to smart scan of project folder and parents)")
     p_find.add_argument("--export-map", help="Export path mapping as JSON to specified file path")
 
     # internalize
     p_internal = subparsers.add_parser("internalize", help="Bundle external files into project resources (100% portable)")
     p_internal.add_argument("project", help="Path to .rwc / .rw8 project bundle")
-    p_internal.add_argument("--search-dirs", nargs="+", required=True, help="Directories to search for assets")
+    p_internal.add_argument("--search-dirs", nargs="+", default=None, help="Directories to search for assets (defaults to smart scan of project folder and parents)")
     p_internal.add_argument("--dry-run", action="store_true", help="Simulate without modifying files")
     p_internal.add_argument("--no-backup", action="store_true", help="Skip creating backup")
     p_internal.add_argument("--export-map", help="Export path mapping as JSON to specified file path")
@@ -609,7 +638,11 @@ def main():
     project = RapidWeaverProject(args.project)
 
     if args.command == "inspect":
-        report = project.inspect()
+        search_dirs = args.search_dirs
+        if search_dirs is None and not args.no_auto_search:
+            search_dirs = get_default_search_dirs(args.project)
+        resolver = AssetResolver(search_dirs) if search_dirs else None
+        report = project.inspect(resolver=resolver)
         if args.json:
             print(json.dumps(report, indent=2, default=str))
         else:
@@ -625,12 +658,28 @@ def main():
                 print(f"  • {vol}: {cnt} files")
 
             if report["external_missing"]:
+                recoverable_count = sum(1 for m in report["missing_references"] if m.get("recoverable_path"))
                 print(f"\nMissing Files ({report['external_missing']}):")
-                for item in report["missing_references"][:20]:
-                    print(f"  [!] {item['fileName']} -> {item['lastResolvablePath']}")
-                if len(report["missing_references"]) > 20:
-                    print(f"  ... and {len(report['missing_references']) - 20} more.")
+                for item in report["missing_references"][:25]:
+                    rec_path = item.get("recoverable_path")
+                    if rec_path:
+                        print(f"  [!] {item['fileName']}")
+                        print(f"      Old path:    {item['lastResolvablePath']}")
+                        print(f"      ✓ FOUND AT:  {rec_path}")
+                    else:
+                        print(f"  [!] {item['fileName']}")
+                        print(f"      Old path:    {item['lastResolvablePath']}")
+                        print(f"      ✗ NOT FOUND in search directories")
+                if len(report["missing_references"]) > 25:
+                    print(f"  ... and {len(report['missing_references']) - 25} more.")
 
+                print(f"\nAsset Recovery Status: {recoverable_count} of {report['external_missing']} missing files can be recovered.")
+                if recoverable_count > 0:
+                    print("\nSuggested Action:")
+                    print(f"  To automatically bundle all assets into the project (100% portable across Macs), run:")
+                    print(f"    ./rapidweaver_path_manager.py internalize \"{args.project}\"")
+                    print(f"  Or to keep them external and remap the paths, run:")
+                    print(f"    ./rapidweaver_path_manager.py remap \"{args.project}\"")
             stacks_issues = report.get("stacks_issues", [])
             print(f"\nStacks storedFiles Issues: {len(stacks_issues)}")
             for issue in stacks_issues[:5]:
@@ -641,7 +690,8 @@ def main():
                 print(f"  ... and {len(stacks_issues) - 5} more.")
 
     elif args.command == "find-assets":
-        resolver = AssetResolver(args.search_dirs)
+        sdirs = args.search_dirs if args.search_dirs else get_default_search_dirs(args.project)
+        resolver = AssetResolver(sdirs)
         report = project.inspect()
         print(f"Indexing complete. Searching for {len(report['missing_references'])} missing references...")
         found_count = 0
@@ -673,7 +723,8 @@ def main():
             print(f"Mapping exported to: {args.export_map}")
 
     elif args.command == "internalize":
-        resolver = AssetResolver(args.search_dirs)
+        sdirs = args.search_dirs if args.search_dirs else get_default_search_dirs(args.project)
+        resolver = AssetResolver(sdirs)
         if not args.dry_run and not args.no_backup:
             backup_dir = project.create_backup()
             print(f"Created project backup at: {backup_dir}")
@@ -699,7 +750,8 @@ def main():
             print("\nSUCCESS: Project is now internalized and portable!")
 
     elif args.command == "remap":
-        resolver = AssetResolver(args.search_dirs)
+        sdirs = args.search_dirs if args.search_dirs else get_default_search_dirs(args.project)
+        resolver = AssetResolver(sdirs)
         if not args.dry_run and not args.no_backup:
             backup_dir = project.create_backup()
             print(f"Created project backup at: {backup_dir}")
